@@ -9,7 +9,7 @@ extern crate alloc;
 use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 use blog_os::allocator;
 use blog_os::task::{executor::Executor, keyboard, Task};
-use blog_os::{println, test_runner};
+use blog_os::{print, println, test_runner};
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 
@@ -40,7 +40,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     let mut executor = Executor::new();
     executor.spawn(Task::new(example_task()));
-    executor.spawn(Task::new(keyboard::print_keypresses()));
+    executor.spawn(Task::new(keyboard::save_keypresses()));
+    executor.spawn(Task::new(shell()));
     executor.run();
 }
 
@@ -56,4 +57,12 @@ async fn async_number() -> u32 {
 async fn example_task() {
     let number = async_number().await;
     println!("async number: {}", number);
+}
+
+async fn shell() {
+    loop {
+        print!(">");
+        let line = keyboard::read_line().await;
+        println!("Line: {}", line)
+    }
 }
