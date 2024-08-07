@@ -76,8 +76,14 @@ pub async fn read_line() -> String {
     loop {
         if let Some(character) = characters.next().await {
             print!("{}", character);
-            if character == '\n' {
-                break;
+            match character {
+                '\n' => break,
+                '\u{8}' => {
+                    //print!("BK");
+                    line.pop();
+                    continue;
+                }
+                _ => {}
             }
             line.push(character as char);
         }
