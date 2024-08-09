@@ -4,6 +4,8 @@ use spin::Mutex;
 use volatile::Volatile;
 use x86_64::instructions::port::Port;
 
+use crate::serial_print;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -51,9 +53,28 @@ struct Buffer {
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
+struct Pos {
+    pos: usize,
+}
+impl Pos {
+    fn new(col: usize, row: usize) -> Self {
+        Self {
+            pos: row * BUFFER_WIDTH + col,
+        }
+    }
+    fn col(&self) -> usize {
+        self.pos % BUFFER_WIDTH
+    }
+
+    fn row(&self) -> usize {
+        self.pos / BUFFER_WIDTH
+    }
+}
+
 pub struct Writer {
-    column_position: usize,
-    mutable_start: isize,
+    position: Pos,
+    mutable_start: Pos,
+    mutable: bool,
     color_code: ColorCode,
     buffer: &'static mut Buffer,
 }
@@ -63,10 +84,11 @@ impl Writer {
         match byte {
             b'\n' => self.new_line(),
             8 => {
-                if self.column_position as isize > self.mutable_start {
-                    self.column_position -= 1;
-                    let row = BUFFER_HEIGHT - 1;
-                    let col = self.column_position;
+                if self.mutable && self.position.pos > self.mutable_start.pos {
+                    serial_print!("B {} ", self.position.pos);
+                    self.position.pos -= 1;
+                    let row = self.position.row();
+                    let col = self.position.col();
                     let color_code = self.color_code;
                     self.buffer.chars[row][col].write(ScreenChar {
                         ascii_character: b' ',
@@ -77,27 +99,31 @@ impl Writer {
             byte => {
                 if esc {
                     match byte {
-                        b'i' => self.mutable_start = self.column_position as isize,
+                        b'i' => {
+                            self.mutable = !self.mutable;
+                            self.mutable_start.pos = self.position.pos;
+                        }
+                        b'c' => self.clear_screen(),
                         _ => {}
                     }
                 } else {
-                    if self.column_position >= BUFFER_WIDTH {
+                    if self.position.col() >= BUFFER_WIDTH {
                         self.new_line();
                     }
 
-                    let row = BUFFER_HEIGHT - 1;
-                    let col = self.column_position;
+                    let row = self.position.row();
+                    let col = self.position.col();
 
                     let color_code = self.color_code;
                     self.buffer.chars[row][col].write(ScreenChar {
                         ascii_character: byte,
                         color_code,
                     });
-                    self.column_position += 1;
+                    self.position.pos += 1;
                 }
             }
         }
-        update_cursor(self.column_position, BUFFER_HEIGHT - 1)
+        update_cursor(self.position.pos as u16);
     }
 
     pub fn write_string(&mut self, s: &str) {
@@ -118,15 +144,25 @@ impl Writer {
     }
 
     fn new_line(&mut self) {
-        for row in 1..BUFFER_HEIGHT {
-            for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
+        if self.position.row() == BUFFER_HEIGHT - 1 {
+            for row in 1..BUFFER_HEIGHT {
+                for col in 0..BUFFER_WIDTH {
+                    let character = self.buffer.chars[row][col].read();
+                    self.buffer.chars[row - 1][col].write(character);
+                }
             }
+            self.clear_row(BUFFER_HEIGHT - 1);
+            self.position.pos -= self.position.pos - (BUFFER_WIDTH * self.position.row());
+        } else {
+            self.position.pos += BUFFER_WIDTH;
+            self.position.pos -= self.position.pos - (BUFFER_WIDTH * self.position.row());
         }
-        self.clear_row(BUFFER_HEIGHT - 1);
-        self.column_position = 0;
-        self.mutable_start = -1;
+    }
+
+    fn clear_screen(&mut self) {
+        for row in 0..BUFFER_HEIGHT {
+            self.clear_row(row)
+        }
     }
 
     fn clear_row(&mut self, row: usize) {
@@ -163,8 +199,9 @@ pub fn enable_cursor() {
     outb(0x3D4, 0x0B);
     outb(0x3D5, (inb(0x3D5) & 0xE0) | 15);
 }
-pub fn update_cursor(x: usize, y: usize) {
-    let pos: u16 = (y * BUFFER_WIDTH + x) as u16;
+pub fn update_cursor(pos: u16) {
+    //(x: usize, y: usize) {
+    //let pos: u16 = (position.row() * BUFFER_WIDTH + position.col()) as u16;
 
     outb(0x3D4, 0x0F);
     outb(0x3D5, (pos & 0xFF) as u8);
@@ -189,8 +226,9 @@ impl fmt::Write for Writer {
 
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
-        mutable_start: -1,
+        position: Pos::new(0, 0),
+        mutable_start: Pos::new(0, 0),
+        mutable: false,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });

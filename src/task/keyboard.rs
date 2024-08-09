@@ -88,6 +88,7 @@ pub async fn read_line() -> String {
             line.push(character as char);
         }
     }
+    print!("\x1bi");
     line
 }
 
