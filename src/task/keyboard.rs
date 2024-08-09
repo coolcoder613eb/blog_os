@@ -1,4 +1,4 @@
-use crate::print;
+use crate::{print, serial_print};
 use alloc::string::String;
 use alloc::vec::Vec;
 use conquer_once::spin::OnceCell;
@@ -53,7 +53,7 @@ pub async fn save_keypresses() {
             if let Some(key) = keyboard.process_keyevent(key_event) {
                 match key {
                     DecodedKey::Unicode(character) => push_char(character),
-                    DecodedKey::RawKey(key) => print!("{:?}", key),
+                    DecodedKey::RawKey(key) => serial_print!("{:?}", key),
                 }
             }
         }

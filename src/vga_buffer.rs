@@ -2,6 +2,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+use x86_64::instructions::port::Port;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +87,7 @@ impl Writer {
                 self.column_position += 1;
             }
         }
+        update_cursor(self.column_position, BUFFER_HEIGHT - 1)
     }
 
     pub fn write_string(&mut self, s: &str) {
@@ -120,6 +122,47 @@ impl Writer {
         }
     }
 }
+
+fn outb(id: u16, val: u8) {
+    unsafe {
+        Port::new(id).write(val);
+    }
+}
+fn inb(id: u16) -> u8 {
+    unsafe {
+        let input: u8 = Port::new(id).read();
+        input
+    }
+}
+pub fn disable_cursor() {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, 0x20);
+}
+
+pub fn enable_cursor() {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, (inb(0x3D5) & 0xC0) | 13);
+
+    outb(0x3D4, 0x0B);
+    outb(0x3D5, (inb(0x3D5) & 0xE0) | 15);
+}
+pub fn update_cursor(x: usize, y: usize) {
+    let pos: u16 = (y * BUFFER_WIDTH + x) as u16;
+
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (pos & 0xFF) as u8);
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, ((pos >> 8) & 0xFF) as u8);
+}
+pub fn get_cursor_position() -> u16 {
+    let mut pos: u16 = 0;
+    outb(0x3D4, 0x0F);
+    pos |= inb(0x3D5) as u16;
+    outb(0x3D4, 0x0E);
+    pos |= (inb(0x3D5) as u16) << 8;
+    return pos;
+}
+
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
@@ -148,10 +191,9 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    use x86_64::instructions::interrupts; // new
+    use x86_64::instructions::interrupts;
 
     interrupts::without_interrupts(|| {
-        // new
         WRITER.lock().write_fmt(args).unwrap();
     });
 }

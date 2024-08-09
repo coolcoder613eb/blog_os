@@ -9,6 +9,9 @@ extern crate alloc;
 use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 use blog_os::allocator;
 use blog_os::task::{executor::Executor, keyboard, Task};
+use blog_os::vga_buffer::{
+    disable_cursor, enable_cursor, get_cursor_position, update_cursor, WRITER,
+};
 use blog_os::{print, println, test_runner};
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
@@ -39,7 +42,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     test_main();
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(example_task()));
     executor.spawn(Task::new(keyboard::save_keypresses()));
     executor.spawn(Task::new(shell()));
     executor.run();
@@ -50,16 +52,8 @@ fn trivial_assertion() {
     assert_eq!(2 + 2, 4);
 }
 
-async fn async_number() -> u32 {
-    42
-}
-
-async fn example_task() {
-    let number = async_number().await;
-    println!("async number: {}", number);
-}
-
 async fn shell() {
+    enable_cursor();
     loop {
         print!(">");
         let line = keyboard::read_line().await;
