@@ -72,6 +72,7 @@ fn push_char(character: char) {
 pub async fn read_line() -> String {
     let mut characters = InputStream {};
     let mut line = String::new();
+    print!("\x1bi");
 
     loop {
         if let Some(character) = characters.next().await {
@@ -79,7 +80,6 @@ pub async fn read_line() -> String {
             match character {
                 '\n' => break,
                 '\u{8}' => {
-                    //print!("BK");
                     line.pop();
                     continue;
                 }

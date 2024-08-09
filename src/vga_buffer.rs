@@ -53,51 +53,67 @@ struct Buffer {
 
 pub struct Writer {
     column_position: usize,
+    mutable_start: isize,
     color_code: ColorCode,
     buffer: &'static mut Buffer,
 }
 
 impl Writer {
-    pub fn write_byte(&mut self, byte: u8) {
+    pub fn write_byte(&mut self, byte: u8, esc: bool) {
         match byte {
             b'\n' => self.new_line(),
             8 => {
-                self.column_position -= 1;
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
-                let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenChar {
-                    ascii_character: b' ',
-                    color_code,
-                });
+                if self.column_position as isize > self.mutable_start {
+                    self.column_position -= 1;
+                    let row = BUFFER_HEIGHT - 1;
+                    let col = self.column_position;
+                    let color_code = self.color_code;
+                    self.buffer.chars[row][col].write(ScreenChar {
+                        ascii_character: b' ',
+                        color_code,
+                    });
+                }
             }
             byte => {
-                if self.column_position >= BUFFER_WIDTH {
-                    self.new_line();
+                if esc {
+                    match byte {
+                        b'i' => self.mutable_start = self.column_position as isize,
+                        _ => {}
+                    }
+                } else {
+                    if self.column_position >= BUFFER_WIDTH {
+                        self.new_line();
+                    }
+
+                    let row = BUFFER_HEIGHT - 1;
+                    let col = self.column_position;
+
+                    let color_code = self.color_code;
+                    self.buffer.chars[row][col].write(ScreenChar {
+                        ascii_character: byte,
+                        color_code,
+                    });
+                    self.column_position += 1;
                 }
-
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
-
-                let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenChar {
-                    ascii_character: byte,
-                    color_code,
-                });
-                self.column_position += 1;
             }
         }
         update_cursor(self.column_position, BUFFER_HEIGHT - 1)
     }
 
     pub fn write_string(&mut self, s: &str) {
+        let mut esc = false;
         for byte in s.bytes() {
             match byte {
-                // printable ASCII byte or newline
-                0x20..=0x7e | b'\n' | 8 => self.write_byte(byte),
+                // printable ASCII byte or newline or backspace
+                0x20..=0x7e | b'\n' | 8 => self.write_byte(byte, esc),
+                0x1b => {
+                    esc = true;
+                    continue;
+                }
                 // not part of printable ASCII range
-                _ => self.write_byte(0xfe),
+                _ => self.write_byte(0xfe, esc),
             }
+            esc = false;
         }
     }
 
@@ -110,6 +126,7 @@ impl Writer {
         }
         self.clear_row(BUFFER_HEIGHT - 1);
         self.column_position = 0;
+        self.mutable_start = -1;
     }
 
     fn clear_row(&mut self, row: usize) {
@@ -173,6 +190,7 @@ impl fmt::Write for Writer {
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
+        mutable_start: -1,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
