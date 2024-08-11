@@ -10,7 +10,7 @@ use crossbeam_queue::ArrayQueue;
 use futures_util::stream::{Stream, StreamExt};
 use futures_util::task::AtomicWaker;
 use lazy_static::lazy_static;
-use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+use pc_keyboard::{layouts, DecodedKey, HandleControl, KeyCode, Keyboard, ScancodeSet1};
 use spin::Mutex;
 
 static WAKER: AtomicWaker = AtomicWaker::new();
@@ -53,7 +53,17 @@ pub async fn save_keypresses() {
             if let Some(key) = keyboard.process_keyevent(key_event) {
                 match key {
                     DecodedKey::Unicode(character) => push_char(character),
-                    DecodedKey::RawKey(key) => serial_print!("{:?}", key),
+                    DecodedKey::RawKey(key) => match key {
+                        KeyCode::ArrowLeft => {
+                            push_char('\x1b');
+                            push_char('<')
+                        }
+                        KeyCode::ArrowRight => {
+                            push_char('\x1b');
+                            push_char('>')
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
@@ -72,20 +82,79 @@ fn push_char(character: char) {
 pub async fn read_line() -> String {
     let mut characters = InputStream {};
     let mut line = String::new();
+    let mut pos: usize = 0;
+    let mut esc = false;
     print!("\x1bi");
+
+    fn redraw_line(line: &str, pos: usize) {
+        print!(
+            "{}{}{}",
+            "\x1b<".repeat(line.len()), // Move cursor to start
+            line,                       // Redraw the line
+            "\x1b<".repeat(pos)         // Move cursor back to the correct position
+        );
+    }
+
+    fn clear_and_redraw(line: &str, pos: usize) {
+        print!(
+            "{}{}",
+            "\x1b<".repeat(line.len()), // Move cursor to start
+            " ".repeat(line.len()),     // Clear the line
+        );
+        redraw_line(line, pos);
+    }
 
     loop {
         if let Some(character) = characters.next().await {
-            print!("{}", character);
-            match character {
-                '\n' => break,
-                '\u{8}' => {
-                    line.pop();
-                    continue;
+            if !esc && character != '\n' {
+                if pos > 0 && pos < line.len() {
+                    let mut temp_line = line.clone();
+                    temp_line.insert(temp_line.len() - pos, character as char);
+                    clear_and_redraw(&temp_line, pos);
+                } else {
+                    print!("{}", character);
                 }
-                _ => {}
             }
-            line.push(character as char);
+
+            if esc {
+                match character {
+                    '<' | '>' => {
+                        let (new_pos, move_cmd) = if character == '<' && pos < line.len() {
+                            (pos + 1, "\x1b<")
+                        } else if character == '>' && pos > 0 {
+                            (pos - 1, "\x1b>")
+                        } else {
+                            continue;
+                        };
+                        pos = new_pos;
+                        print!("{}", move_cmd);
+                        redraw_line(&line, pos);
+                    }
+                    _ => {}
+                }
+                esc = false;
+            } else {
+                match character {
+                    '\n' => {
+                        redraw_line(&line, 0);
+                        println!();
+                        break;
+                    }
+                    '\u{8}' => {
+                        if pos < line.len() {
+                            line.remove((line.len() - pos) - 1);
+                            clear_and_redraw(&line, pos);
+                        }
+                        continue;
+                    }
+                    '\x1b' => esc = true,
+                    _ => {
+                        if !esc {
+                            line.insert(line.len() - pos, character as char);
+                        }
+                    }
+                }
+            }
         }
     }
     print!("\x1bi");

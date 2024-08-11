@@ -4,7 +4,7 @@ use spin::Mutex;
 use volatile::Volatile;
 use x86_64::instructions::port::Port;
 
-use crate::serial_print;
+use crate::{serial_print, serial_println};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,6 @@ impl Writer {
             b'\n' => self.new_line(),
             8 => {
                 if self.mutable && self.position.pos > self.mutable_start.pos {
-                    serial_print!("B {} ", self.position.pos);
                     self.position.pos -= 1;
                     let row = self.position.row();
                     let col = self.position.col();
@@ -104,6 +103,16 @@ impl Writer {
                             self.mutable_start.pos = self.position.pos;
                         }
                         b'c' => self.clear_screen(),
+                        b'<' => {
+                            if self.mutable && self.position.pos > self.mutable_start.pos {
+                                self.position.pos -= 1;
+                            }
+                        }
+                        b'>' => {
+                            if self.mutable {
+                                self.position.pos += 1;
+                            }
+                        }
                         _ => {}
                     }
                 } else {
