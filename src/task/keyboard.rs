@@ -86,49 +86,57 @@ pub async fn read_line() -> String {
     let mut esc = false;
     print!("\x1bi");
 
-    fn redraw_line(line: &str, pos: usize) {
-        print!(
-            "{}{}{}",
-            "\x1b<".repeat(line.len()), // Move cursor to start
-            line,                       // Redraw the line
-            "\x1b<".repeat(pos)         // Move cursor back to the correct position
-        );
-    }
-
-    fn clear_and_redraw(line: &str, pos: usize) {
-        print!(
-            "{}{}",
-            "\x1b<".repeat(line.len()), // Move cursor to start
-            " ".repeat(line.len()),     // Clear the line
-        );
-        redraw_line(line, pos);
-    }
-
     loop {
         if let Some(character) = characters.next().await {
             if !esc && character != '\n' {
                 if pos > 0 && pos < line.len() {
+                    // When inserting a character, temporarily create a new line with the inserted character
                     let mut temp_line = line.clone();
                     temp_line.insert(temp_line.len() - pos, character as char);
-                    clear_and_redraw(&temp_line, pos);
+
+                    // Clear the current line and redraw it with the new character inserted
+                    print!(
+                        "{}{}{}{}{}",
+                        "\x1b<".repeat(line.len()), // Move cursor to start
+                        " ".repeat(line.len()),     // Clear the line
+                        "\x1b<".repeat(line.len()), // Move cursor back to start
+                        temp_line, // Print the new line with the inserted character
+                        "\x1b<".repeat(pos)  // Move the cursor back to the correct position
+                    );
                 } else {
-                    print!("{}", character);
+                    print!("{}", character); // Normal printing if at the end of the line
                 }
             }
 
             if esc {
                 match character {
-                    '<' | '>' => {
-                        let (new_pos, move_cmd) = if character == '<' && pos < line.len() {
-                            (pos + 1, "\x1b<")
-                        } else if character == '>' && pos > 0 {
-                            (pos - 1, "\x1b>")
-                        } else {
-                            continue;
-                        };
-                        pos = new_pos;
-                        print!("{}", move_cmd);
-                        redraw_line(&line, pos);
+                    '<' => {
+                        if pos < line.len() {
+                            pos += 1;
+                            print!("\x1b<");
+
+                            // Redraw the line after moving the cursor left
+                            print!(
+                                "{}{}{}",
+                                "\x1b<".repeat(line.len()), // Move cursor to start
+                                line,                       // Redraw the line
+                                "\x1b<".repeat(pos) // Move cursor back to the correct position
+                            );
+                        }
+                    }
+                    '>' => {
+                        if pos > 0 {
+                            pos -= 1;
+                            print!("\x1b>");
+
+                            // Redraw the line after moving the cursor right
+                            print!(
+                                "{}{}{}",
+                                "\x1b<".repeat(line.len()), // Move cursor to start
+                                line,                       // Redraw the line
+                                "\x1b<".repeat(pos) // Move cursor back to the correct position
+                            );
+                        }
                     }
                     _ => {}
                 }
@@ -136,28 +144,41 @@ pub async fn read_line() -> String {
             } else {
                 match character {
                     '\n' => {
-                        redraw_line(&line, 0);
-                        println!();
+                        // Clear the current line and redraw it with the new character inserted
+                        println!(
+                            "{}{}",
+                            "\x1b<".repeat(line.len()), // Move cursor to start
+                            line                        // Redraw line
+                        );
                         break;
-                    }
+                    } // End of input
                     '\u{8}' => {
+                        // Handle backspace
                         if pos < line.len() {
                             line.remove((line.len() - pos) - 1);
-                            clear_and_redraw(&line, pos);
+
+                            // Clear and redraw the line after removing a character
+                            print!(
+                                "{}{}{}{}{}",
+                                "\x1b<".repeat(line.len() + 1), // Move cursor to start
+                                " ".repeat(line.len()),         // Clear the line
+                                "\x1b<".repeat(line.len() + 1), // Move cursor back to start
+                                line,                           // Redraw the line
+                                "\x1b<".repeat(pos) // Move cursor back to the correct position
+                            );
                         }
                         continue;
                     }
-                    '\x1b' => esc = true,
-                    _ => {
-                        if !esc {
-                            line.insert(line.len() - pos, character as char);
-                        }
-                    }
+                    '\x1b' => esc = true, // Begin escape sequence
+                    _ => {}
+                }
+                if !esc {
+                    line.insert(line.len() - pos, character as char);
                 }
             }
         }
     }
-    print!("\x1bi");
+    print!("\x1bi"); // Reset or exit the input mode
     line
 }
 
