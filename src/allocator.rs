@@ -1,6 +1,6 @@
 use alloc::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;
-use linked_list_allocator::LockedHeap;
+use good_memory_allocator::SpinLockedAllocator;
 use x86_64::{
     structures::paging::{
         mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB,
@@ -9,10 +9,10 @@ use x86_64::{
 };
 
 #[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
+static ALLOCATOR: SpinLockedAllocator = SpinLockedAllocator::empty();
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
-pub const HEAP_SIZE: usize = 400 * 1024; // 100 KiB
+pub const HEAP_SIZE: usize = 8 * 1024 * 1024; // 256k
 
 pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,
@@ -35,7 +35,7 @@ pub fn init_heap(
     }
 
     unsafe {
-        ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
+        ALLOCATOR.init(HEAP_START, HEAP_SIZE);
     }
 
     Ok(())

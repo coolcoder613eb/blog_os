@@ -8,12 +8,16 @@
 extern crate alloc;
 
 pub mod allocator;
+pub mod ata;
+pub mod fat;
 pub mod gdt;
 pub mod interrupts;
 pub mod memory;
 pub mod serial;
+pub mod simplefs;
 pub mod task;
 pub mod vga_buffer;
+pub mod wasm;
 
 use core::panic::PanicInfo;
 

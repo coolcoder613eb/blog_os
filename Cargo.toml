@@ -8,15 +8,23 @@ edition = "2018"
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"]}
 volatile = "0.2.6"
-spin = "0.5.2"
-x86_64 = "0.14.2"
+spin = "0.9.8"
+x86_64 = "0.14.12"
 uart_16550 = "0.2.0"
 pic8259 = "0.10.1"
 pc-keyboard = "0.7.0"
-linked_list_allocator = "0.9.0"
+fatfs = { version = "0.4", features = ["alloc","lfn","unicode"], default-features = false , git = "https://github.com/rafalh/rust-fatfs"}
+wasmi = { version = "0.32", default-features = false }
+x86_ata = "0.1.0"
+bit_field = "0.10.2"
+good_memory_allocator = "0.1.7"
+
+[dependencies.serde]
+default-features = false
+version = "1.0.210"
 
 [dependencies.lazy_static]
-version = "1.0"
+version = "1.4"
 features = ["spin_no_std"]
 
 [dependencies.crossbeam-queue]
@@ -32,6 +40,14 @@ default-features = false
 version = "0.3.4"
 default-features = false
 features = ["alloc"]
+
+[dependencies.shlex]
+version="1.3.0"
+default-features = false
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
 
 [package.metadata.bootimage]
 test-args = [
